@@ -1,0 +1,88 @@
+---
+title: "Appendix A"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(rpart)
+library(rpart.plot)
+```
+
+Load table in and add a column that calculate the percentage of total followers each subject gained over the 90-day period.
+```{r }
+tab <- read.csv("TwitterData.csv")
+
+tab <- tab %>%
+  mutate(Percent.Follower.Change = 100 * Follower.count.slope.over.90.days.after.scandal / Total.Followers)
+
+tab
+```
+
+Group the data by industry, calculate mean percentage change and plot it.
+```{r 2}
+new_tab <- tab %>%
+  select(Person, Industry, Percent.Follower.Change) %>%
+  filter(Person != "Roseanne Barr" & Person != "Daryl Morey") %>%
+  group_by(Industry) %>%
+  summarise(avg_change = mean(Percent.Follower.Change))
+
+new_tab %>%
+  ggplot(aes(x = Industry, y = avg_change, fill=Industry)) +
+  geom_bar(stat="identity") +
+  ylab("Average percent change in Twitter followers") + 
+  ggtitle("Average Percent Change in Twitter Followers by Industry")
+```
+
+Look at those subjects involved in sexual assault...
+```{r 3}
+new_tab <- tab %>%
+  filter(Description=="Sexual assault") %>%
+  select(Person, Description, Industry, Gain.Lost, Percent.Follower.Change)
+
+new_tab
+```
+
+... versus everyone else.
+```{r 4}
+new_tab <- tab %>%
+  filter(Description!="Sexual assault") %>%
+  select(Person, Description, Industry, Gain.Lost, Percent.Follower.Change)
+
+new_tab
+```
+
+Inspect subject's latency against other information, if applicable.
+```{r 5}
+new_tab <- tab %>%
+  select(Person, Description, Gain.Lost, Latency, Total.Followers) %>%
+  filter(!is.na(Latency))
+
+new_tab
+```
+
+Train a decision tree to predict what percentage change a subject will see, based on the type of scandal (Sexual assault, Tweet-related, or Other) and the subject's industry.
+```{r 6}
+input <- tab %>%
+  mutate(Sexual.Assault = (Description=="Sexual assault")) %>%
+  mutate(Desc = 
+           ifelse(Description=="Sexual assault", 
+                  "Sexual assault",
+                  ifelse(Description=="Offensive tweet" | Description =="Racist tweet",
+                         "Tweet",
+                         "Other")))
+
+binary.model <- rpart(
+  Percent.Follower.Change ~ Desc + Industry,
+  data = input,
+  method = "anova",
+  control = rpart.control(minbucket=1, minsplit=1)
+)
+binary.model
+rpart.plot(binary.model, extra = 1, type = 3)
+```
